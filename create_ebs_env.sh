@@ -22,12 +22,11 @@ echo "Creating EBS application $identifier"
 aws ec2 describe-vpcs --filters Name=isDefault,Values=true > tmp/$identifier/defaultvpc.json || fail
 vpcid=$(jq -r '.Vpcs[0].VpcId' tmp/$identifier/defaultvpc.json)
 echo "default vpc is $vpcid"
-
 # Create a security group for the database
 aws ec2 create-security-group \
-    --group-name $identifier \
+    --group-name invoicer_db \
     --description "access control to Invoicer Postgres DB" \
-    --vpc-id $vpcid > tmp/$identifier/dbsg.json || fail
+    --vpc-id vpc-2e2bc34a > tmp/$identifier/dbsg.json || fail
 dbsg=$(jq -r '.GroupId' tmp/$identifier/dbsg.json)
 echo "DB security group is $dbsg"
 
@@ -37,16 +36,16 @@ dbstorage=5
 dbpass=$(dd if=/dev/urandom bs=128 count=1 2>/dev/null| tr -dc _A-Z-a-z-0-9)
 aws rds create-db-instance \
     --db-name invoicer \
-    --db-instance-identifier "$identifier" \
-    --vpc-security-group-ids "$dbsg" \
-    --allocated-storage "$dbstorage" \
-    --db-instance-class "$dbinstclass" \
+    --db-instance-identifier invoicer-db \
+    --vpc-security-group-ids sg-08c53c92eaeea49b8 \
+    --allocated-storage "5" \
+    --db-instance-class "db.t2.micro" \
     --engine postgres \
     --engine-version 9.6.2 \
     --auto-minor-version-upgrade \
     --publicly-accessible \
     --master-username invoicer \
-    --master-user-password "$dbpass" \
+    --master-user-password "Seequent20" \
     --no-multi-az > tmp/$identifier/rds.json || fail
 echo "RDS Postgres database is being created. username=invoicer; password='$dbpass'"
 
@@ -83,12 +82,11 @@ dockerstack="$(aws elasticbeanstalk list-available-solution-stacks | \
 sed "s/POSTGRESPASSREPLACEME/$dbpass/" ebs-options.json > tmp/$identifier/ebs-options.json || fail
 sed -i "s/POSTGRESHOSTREPLACEME/$dbhost/" tmp/$identifier/ebs-options.json || fail
 aws elasticbeanstalk create-environment \
-    --application-name $identifier \
-    --environment-name $identifier-invoicer-api \
-    --description "Invoicer API environment" \
-    --tags "Key=Owner,Value=$(whoami)" \
-    --solution-stack-name "$dockerstack" \
-    --option-settings file://tmp/$identifier/ebs-options.json \
+    --application-name invoicer \
+    --environment-name invoicer-api \
+    --description "Invoicer App" \
+    --solution-stack-name "64bit Amazon Linux 2018.03 v2.15.2 running Docker 19.03.6-ce" \
+    --option-settings file://ebs-options.json \
     --tier "Name=WebServer,Type=Standard,Version=''" > tmp/$identifier/ebcreateapienv.json || fail
 apieid=$(jq -r '.EnvironmentId' tmp/$identifier/ebcreateapienv.json)
 echo "API environment $apieid is being created"
